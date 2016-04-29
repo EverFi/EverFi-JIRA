@@ -6,33 +6,54 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="ap-local-base-url" content="{{localBaseUrl}}">
 
-    <link rel="stylesheet" href="//aui-cdn.atlassian.com/aui-adg/5.6.11/css/aui.css" media="all">
+    <link rel="stylesheet" href="//aui-cdn.atlassian.com/aui-adg/5.9.17/css/aui.min.css" media="all">
+    <link rel="stylesheet" href="//aui-cdn.atlassian.com/aui-adg/5.9.17/css/aui-experimental.css" media="all">
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
-    <script src="//aui-cdn.atlassian.com/aui-adg/5.6.11/js/aui.js" type="text/javascript"></script>
+    <script src="//aui-cdn.atlassian.com/aui-adg/5.9.17/js/aui.min.js"></script>
+    <script src="//aui-cdn.atlassian.com/aui-adg/5.9.17/js/aui-experimental.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
     <script src="{{parentUrl}}/atlassian-connect/all.js" type="text/javascript"></script>
 </head>
 
 <body class="aui-page-hybrid">
-<section id="content" role="main">
-    <div class="aui-page-panel ac-content">
-        <div class="aui-page-panel-inner">
-            <section class="aui-page-panel-content">
-                <div id="project-releases" class="aui-item">
-                </div>
-            </section>
-        </div>
-    </div>
-</section>
+    <div id="project-releases" class="aui-item"></div>
 <script type="text/underscore-template" id="projectTableRow">
-    <tr><td><%=project.key%></td><td><%=project.currentVersion.releaseDate%></td><td><%=project.scheduledVersion[0].releaseDate%></td></tr>
+    <tr>
+      <td data-sort-value='<%=project.name%>'><a href="{{parentUrl}}/projects/<%=project.key%>"><%=project.name%></a></td>
+      <td>
+        <% if (project.currentVersion) { %>
+          <a href="{{parentUrl}}/projects/<%=project.key%>/versions/<%=project.currentVersion.id%>"><%=project.currentVersion.name%></a>
+        <% } else { %>
+        - None -
+        <% } %>
+      </td>
+      <td data-sort-value="<%=project.currentVersion ? project.currentVersion.releaseDate : ''%>">
+        <% if (project.currentVersion) { %>
+          <%=project.currentVersion.prettyReleaseDate ? project.currentVersion.prettyReleaseDate : 'not set'%>
+        <% } %>
+      </td>
+      <td>
+        <% if (project.scheduledVersion) { %>
+          <a href="{{parentUrl}}/projects/<%=project.key%>/versions/<%=project.scheduledVersion.id%>"><%=project.scheduledVersion.name%></a>
+        <% } else { %>
+          - None -
+        <% } %>
+      </td>
+      <td data-sort-value="<%=project.scheduledVersion ? project.scheduledVersion.releaseDate : ''%>">
+        <% if (project.scheduledVersion) { %>
+          <%=project.scheduledVersion.prettyReleaseDate ? project.scheduledVersion.prettyReleaseDate : 'not set'%>
+        <% } %>
+      </td>
+    </tr>
 </script>
 <script type="text/underscore-template" id="projectTableTemplate">
-    <table id='projectsTable' class='aui'>
+    <table id='projectsTable' class='aui aui-table-sortable'>
         <thead>
           <th>Key</th>
-          <th>Current Version - Released</th>
-          <th>Scheduled Version - Release</th>
+          <th class="aui-table-column-unsortable">Current</th>
+          <th>Date</th>
+          <th class="aui-table-column-unsortable">Scheduled</th>
+          <th>Date</th>
         </thead>
         <tbody></tbody>
     </table>
@@ -45,7 +66,7 @@
         </div>
         <div class='field-group'>
             <label for='selectedProjects'>Projects:<span class='aui-icon icon-required'>required</span></label>
-            <select class='select' id='selectedProjects' multiple></select>
+            <select class='select multi-select' id='selectedProjects' multiple></select>
         </div>
         <div class='buttons-container'>
             <button type='submit' id='saveConfiguration' class='aui-button'>Save</button>
@@ -68,18 +89,23 @@
                 }
             },
             template: function(value) {
-                return _.template($('#projectsTableTemplate').html())(value);
+                return _.template($('#projectTableTemplate').html())(value);
             },
             rowTemplate: function(project) {
                 return _.template($('#projectTableRow').html())(project);
             },
             render: function(configuration) {
-                $('#projects-releases').html(this.template());
+                $('#project-releases').html(this.template());
                 this.setTitle(configuration);
                 var that = this;
+                var projectTableBody = $('#projectsTable tbody');
+                var rowsAdded = 0;
                 new ProjectService().getVersions(configuration.projects, function(project) {
-                    var projectTable = $('#projectsTable');
-                  projectTable.append(that.rowTemplate({project: project}));
+                    projectTableBody.append(that.rowTemplate({project: project}));
+                    rowsAdded++;
+                    if (rowsAdded === configuration.projects.length){
+                        AJS.tablessortable.setTableSortable(AJS.$("#projectsTable"));
+                    }
                 });
             }
         }
@@ -89,24 +115,27 @@
         return {
             getVersions: function(projects, callback) {
                 AP.require(['request'], function(request) {
-                  projects.forEach(function(project){
+                  $.each(projects, function(index, projectId){
                     request({
-                        url: '/rest/api/2/project/' + project.key + '/version',
+                        url: '/rest/api/2/project/' + projectId + '?expand=version',
                         success: function(response) {
-                          let versions = JSON.parse(response);
+                          let project = JSON.parse(response);
                           project.scheduledVersions = [];
-                          versions.values.forEach(function(version) {
-                            version.releaseDate = new Date(version.releaseDate);
-                            if (version.released && (!project.currentVersion || version.releaseDate > project.currentVersion.releaseDate)) {
-                              project.currentVersion = version;
-                            } else {
+                          $.each(project.versions, function(i, version) {
+                            version.prettyReleaseDate = version.releaseDate ? new Date(version.releaseDate).toLocaleDateString() : '';
+                            if (version.released){
+                              if (!project.currentVersion || version.releaseDate > project.currentVersion.releaseDate){
+                                project.currentVersion = version;
+                              }
+                            } else if (!version.archived) {
                               project.scheduledVersions.push(version);
                             }
                           });
+                          project.scheduledVersion = project.scheduledVersions[0];
                           callback(project);
                         }
                     });
-                });
+                  });
                 });
             }
         }
@@ -127,7 +156,7 @@
                             $.each(projects, function(index, project) {
                                 var select = $('<option>', {value: project.id})
                                         .text(project.name);
-                                if (config && config.projects && config.projects.indexOf(project.id) > -1) {
+                                if (config && config.projects && $.inArray(project.id, config.projects) !== -1) {
                                     selectedProject.append(select.attr('selected', 'selected'));
                                 }
                                 selectedProject.append(select);
@@ -148,8 +177,9 @@
                     e.preventDefault();
                     var service = new DashboardItemConfigurationService();
                     var $title = $('#itemTitle').val();
-                    var $project = $('#selectedProject').find(':selected').val();
-                    var configuration = {projects: $project, title: $title};
+                    var $projects = $('#selectedProjects').find(':selected');
+                    var projects = $projects.length === 0 ? null : $projects.map(function(i, el) { return $(el).val() });
+                    var configuration = {projects: projects, title: $title};
                     service.save(configuration, function() {
                         new ProjectTableView().render(configuration);
                     });

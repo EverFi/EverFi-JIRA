@@ -18,11 +18,11 @@ module.exports = function (app, addon) {
 
     // This is an example route that's used by the default "generalPage" module.
     // Verify that the incoming request is authenticated with Atlassian Connect
-    app.get('/issues-in-project', addon.authenticate(), function (req, res) {
+    app.get('/project-versions', addon.authenticate(), function (req, res) {
             // Rendering a template is easy; the `render()` method takes two params: name of template
             // and a json object to pass the context in
 
-            res.render('issues-in-project', {
+            res.render('project-versions', {
                 parentUrl: req.query['xdm_e'],
                 dashboard: req.query['dashboard'],
                 dashboardItem: req.query['dashboardItem']
